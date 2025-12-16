@@ -1879,8 +1879,8 @@ int llama_context::decode(const llama_batch & batch_inp) {
 
                     eagle3_draft_logits.resize(draft_vocab_size);
                     const size_t last_offset = last_idx * draft_vocab_size * sizeof(float);
-                    ggml_backend_tensor_get(t_logits, eagle3_draft_logits.data(), last_offset, draft_vocab_size * sizeof(float));
-
+                    ggml_backend_tensor_get_async(backend_res, t_logits, eagle3_draft_logits.data(), last_offset, draft_vocab_size * sizeof(float));
+                    synchronize();
                     float * last_logits_out = logits_out + last_idx * n_vocab;
                     std::fill(last_logits_out, last_logits_out + n_vocab, -std::numeric_limits<float>::infinity());
 
