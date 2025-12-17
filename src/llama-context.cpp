@@ -1276,7 +1276,7 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
 
         // FIXME this call causes a crash if any model inputs were not used in the graph and were therefore not allocated
         res->set_inputs(&ubatch);
-        
+
         // EAGLE3: Fill g_embeddings for decoder input
         if (model.arch == LLM_ARCH_EAGLE3 && gtype == LLM_GRAPH_TYPE_DECODER && !eagle3.g_embeddings.empty()) {
             ggml_tensor * g_embd = ggml_graph_get_tensor(gf, "inp_g_embeddings");
@@ -2406,36 +2406,36 @@ void llama_context::extract_eagle3_features(const llama_ubatch & ubatch) {
     const int64_t n_tokens = ubatch.n_tokens;
     const int64_t n_embd = model.hparams.n_embd;
     const size_t n_layers = eagle3.extract_tensors.size();
-    
+
     // Allocate storage for concatenated features
     const int64_t n_embd_concat = n_embd * n_layers;
     eagle3.target_features.resize(n_embd_concat * n_tokens);
-    
+
     // Temporary buffer to hold layer features before transposing
     static thread_local std::vector<float> temp_layer_features;
     temp_layer_features.resize(n_embd * n_tokens);
-    
+
     LLAMA_LOG_DEBUG("%s: Start to extract EAGLE3 features: %zu layers, %lld tokens, %lld embd\n",
                     __func__, n_layers, (long long)n_tokens, (long long)n_embd);
-    
+
     // Extract each layer's features and interleave into token-major layout
     for (size_t layer_idx = 0; layer_idx < n_layers; ++layer_idx) {
         ggml_tensor * tensor = eagle3.extract_tensors[layer_idx];
         GGML_ASSERT(tensor != nullptr && "EAGLE3 extraction tensor is null");
-        
+
         // Get the backend where this tensor is stored
         ggml_backend_t backend = ggml_backend_sched_get_tensor_backend(sched.get(), tensor);
         GGML_ASSERT(backend != nullptr && "EAGLE3 tensor has no backend");
-        
+
         // Verify tensor shape: should be [n_embd, n_tokens]
         GGML_ASSERT(tensor->ne[0] == n_embd && tensor->ne[1] == n_tokens &&
                     "EAGLE3 extraction tensor has unexpected shape");
-        
+
         // Get layer features to temp buffer
         const size_t size_bytes = n_embd * n_tokens * sizeof(float);
         ggml_backend_tensor_get_async(backend, tensor, temp_layer_features.data(), 0, size_bytes);
         ggml_backend_sched_synchronize(sched.get());
-        
+
         // Then copy to correct position in target_features
         // target_features layout: [token_0_all_layers, token_1_all_layers, ...]
         // Each token has [layer_0_embd, layer_1_embd, layer_2_embd]
@@ -2447,7 +2447,7 @@ void llama_context::extract_eagle3_features(const llama_ubatch & ubatch) {
             std::memcpy(dest, src, n_embd * sizeof(float));
         }
     }
-    
+
 }
 
 //

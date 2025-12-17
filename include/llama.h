@@ -905,7 +905,7 @@ extern "C" {
     // Returns NULL if no features are available
     // Format: [3*n_embd, n_tokens] - use model.hparams.n_embd and batch.n_tokens for dimensions
     LLAMA_API const float * llama_get_eagle3_target_features(struct llama_context * ctx);
-    
+
     // Set g_embeddings from EAGLE3 encoder output for decoder input
     // g_embd: pointer to encoder output embeddings
     LLAMA_API void llama_set_eagle3_g_embeddings(
