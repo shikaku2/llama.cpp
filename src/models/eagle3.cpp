@@ -1,4 +1,88 @@
 #include "models.h"
+#include <algorithm>
+
+// Eagle3 model class implementation
+
+void llama_model_eagle3::load_arch_hparams(llama_model_loader & ml) {
+    ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, hparams.f_norm_rms_eps);
+
+    std::array<int, 4> extract_layers_tmp = {};
+    if (!ml.get_key_or_arr(LLM_KV_EAGLE3_EXTRACT_LAYERS, extract_layers_tmp, 3, false)) {
+        throw std::runtime_error("EAGLE3 model requires 'extract_layers' in GGUF metadata");
+    }
+    std::copy_n(extract_layers_tmp.begin(), 3, hparams.eagle3_extract_layers.begin());
+    LLAMA_LOG_INFO("%s: EAGLE3 extract_layers = [%d, %d, %d]\n", __func__,
+                   hparams.eagle3_extract_layers[0],
+                   hparams.eagle3_extract_layers[1],
+                   hparams.eagle3_extract_layers[2]);
+
+    ml.get_key(LLM_KV_EAGLE3_TARGET_HIDDEN_SIZE, hparams.eagle3_target_hidden_size);
+    LLAMA_LOG_INFO("%s: EAGLE3 target_hidden_size = %u (draft n_embd = %u)\n", __func__,
+                   hparams.eagle3_target_hidden_size, hparams.n_embd);
+
+    type = LLM_TYPE_UNKNOWN;
+}
+
+void llama_model_eagle3::load_arch_tensors(llama_model_loader & ml) {
+    LLAMA_LOAD_LOCALS;
+
+    const int64_t n_embd_target_features = 3 * hparams.eagle3_target_hidden_size;
+    const int64_t n_embd_attn_input = 2 * n_embd;
+
+    // d2t: draft to target vocabulary mapping (optional)
+    int64_t n_draft_vocab = n_vocab;
+    const struct ggml_tensor * d2t_meta = ml.get_tensor_meta("d2t");
+    if (d2t_meta) {
+        n_draft_vocab = d2t_meta->ne[0];
+        d2t = create_tensor(tn(LLM_TENSOR_EAGLE3_D2T), {n_draft_vocab}, 0);
+        LLAMA_LOG_INFO("%s: EAGLE3 using d2t mapping (draft_vocab_size = %lld)\n", __func__, (long long)n_draft_vocab);
+    } else {
+        d2t = nullptr;
+        LLAMA_LOG_INFO("%s: EAGLE3 without d2t - sharing same vocab_size with target (vocab_size = %lld)\n", __func__, (long long)n_draft_vocab);
+    }
+
+    // Feature fusion layer: projects 3 target layers to draft hidden size
+    fc = create_tensor(tn(LLM_TENSOR_EAGLE3_FC, "weight"), {n_embd_target_features, n_embd}, 0);
+
+    // Output layer (uses draft vocab size)
+    output_norm = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd}, 0);
+    output      = create_tensor(tn(LLM_TENSOR_OUTPUT,      "weight"), {n_embd, n_draft_vocab}, 0);
+
+    // Token embeddings (optional - Llama 3.3 70B EAGLE3 has its own)
+    const struct ggml_tensor * tok_embd_meta = ml.get_tensor_meta(tn(LLM_TENSOR_TOKEN_EMBD, "weight").str().c_str());
+    if (tok_embd_meta) {
+        const int64_t n_target_vocab = tok_embd_meta->ne[1];
+        tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_target_vocab}, 0);
+        LLAMA_LOG_INFO("%s: EAGLE3 using its own token_embd (vocab = %lld)\n", __func__, (long long)n_target_vocab);
+    }
+
+    // Single decoder layer
+    for (int i = 0; i < n_layer; ++i) {
+        auto & layer = layers[i];
+
+        layer.attn_norm = create_tensor(tn(LLM_TENSOR_ATTN_NORM,        "weight", i), {n_embd}, 0);
+        layer.eagle3_hidden_norm = create_tensor(tn(LLM_TENSOR_EAGLE3_HIDDEN_NORM, "weight", i), {n_embd}, 0);
+
+        layer.wq = create_tensor(tn(LLM_TENSOR_ATTN_Q,   "weight", i), {n_embd_attn_input, n_embd_head_k * n_head}, 0);
+        layer.wk = create_tensor(tn(LLM_TENSOR_ATTN_K,   "weight", i), {n_embd_attn_input, n_embd_k_gqa}, 0);
+        layer.wv = create_tensor(tn(LLM_TENSOR_ATTN_V,   "weight", i), {n_embd_attn_input, n_embd_v_gqa}, 0);
+        layer.wo = create_tensor(tn(LLM_TENSOR_ATTN_OUT, "weight", i), {n_embd_head_k * n_head, n_embd}, 0);
+
+        layer.ffn_norm = create_tensor(tn(LLM_TENSOR_FFN_NORM, "weight", i), {n_embd}, 0);
+        layer.ffn_gate = create_tensor(tn(LLM_TENSOR_FFN_GATE, "weight", i), {n_embd,   n_ff}, 0);
+        layer.ffn_down = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "weight", i), {  n_ff, n_embd}, 0);
+        layer.ffn_up   = create_tensor(tn(LLM_TENSOR_FFN_UP,   "weight", i), {n_embd,   n_ff}, 0);
+
+        layer.rope_freqs = create_tensor(tn(LLM_TENSOR_ROPE_FREQS, "weight", i), {n_rot/2}, TENSOR_NOT_REQUIRED);
+    }
+}
+
+std::unique_ptr<llm_graph_context> llama_model_eagle3::build_arch_graph(const llm_graph_params & params) const {
+    if (params.gtype == LLM_GRAPH_TYPE_ENCODER) {
+        return std::make_unique<llm_build_eagle3_encode>(*this, params);
+    }
+    return std::make_unique<llm_build_eagle3_decode>(*this, params);
+}
 
 ggml_tensor * llm_build_eagle3_encode::build_inp_embd() const {
     const int64_t n_embd_target_features = 3 * hparams.eagle3_target_hidden_size;
@@ -7,7 +91,7 @@ ggml_tensor * llm_build_eagle3_encode::build_inp_embd() const {
 
     // Input: Target model features (3 layers concatenated: low, mid, high)
     // Data will be provided via ubatch->embd in encode_eagle3_features()
-    auto inp_target = std::make_unique<llm_graph_input_embd>();
+    auto inp_target = std::make_unique<llm_graph_input_embd>(n_embd_target_features);
     inp_target->embd = ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_embd_target_features, n_tokens);
     ggml_set_input(inp_target->embd);
 
@@ -41,9 +125,9 @@ llm_build_eagle3_encode::llm_build_eagle3_encode(const llama_model & model, cons
 // Input: draft tokens + g_embeddings from encoder
 // Output: draft logits
 llm_build_eagle3_decode::llm_build_eagle3_decode(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
-    const int64_t n_embd_head = hparams.n_embd_head_v;
+    const int64_t n_embd_head = hparams.n_embd_head_v();
 
-    GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
+    GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
     GGML_ASSERT(n_layer == 1);  // EAGLE-3 has only one decoder layer
 
     ggml_tensor * cur;
@@ -129,7 +213,7 @@ llm_build_eagle3_decode::llm_build_eagle3_decode(const llama_model & model, cons
         cb(Kcur, "Kcur_rope", il);
 
         cur = build_attn(inp_attn,
-                model.layers[il].wo, NULL,
+                model.layers[il].wo, NULL, NULL,
                 Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, kq_scale, il);
 
         if (inp_out_ids) {
