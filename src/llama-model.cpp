@@ -1141,7 +1141,6 @@ void llama_model_base::load_hparams(llama_model_loader & ml) {
 
     // per-arch hparams
     load_arch_hparams(ml);
-
     pimpl->n_bytes = ml.n_bytes;
 
     pimpl->desc_str = arch_name() + " " + type_name() + " " + ml.ftype_name();

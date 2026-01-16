@@ -20,6 +20,11 @@ void llama_model_eagle3::load_arch_hparams(llama_model_loader & ml) {
     LLAMA_LOG_INFO("%s: EAGLE3 target_hidden_size = %u (draft n_embd = %u)\n", __func__,
                    hparams.eagle3_target_hidden_size, hparams.n_embd);
 
+    ml.get_key(LLM_KV_EAGLE3_NORM_BEFORE_RESIDUAL, hparams.eagle3_norm_before_residual, false);
+    if (hparams.eagle3_norm_before_residual) {
+        LLAMA_LOG_INFO("%s: EAGLE3 norm_before_residual = true\n", __func__);
+    }
+
     type = LLM_TYPE_UNKNOWN;
 }
 
@@ -161,9 +166,6 @@ llm_build_eagle3_decode::llm_build_eagle3_decode(const llama_model & model, cons
     // Single decoder layer (il = 0)
     const int il = 0;
     {
-        // inpL is the concatenated input (normalized inp_embd + normalized inp_g)
-        ggml_tensor * inpSA = inpL;
-
         // Apply input_layernorm to the token embeddings
         ggml_tensor * embd_norm = build_norm(inp_embd,
                 model.layers[il].attn_norm, NULL,
@@ -175,6 +177,12 @@ llm_build_eagle3_decode::llm_build_eagle3_decode(const llama_model & model, cons
                 model.layers[il].eagle3_hidden_norm, NULL,
                 LLM_NORM_RMS, -1);
         cb(g_norm, "g_norm", il);
+
+        // norm_before_residual: determines what goes into the residual connection (compatible with Readhat eagle3 speculator model)
+        // - false (default): use raw inp_g for residual
+        // - true: use normalized g_norm for residual
+        // inpL is the concatenated input (normalized inp_embd + normalized inp_g)
+        ggml_tensor * inpSA = hparams.eagle3_norm_before_residual ? g_norm : inpL;
 
         // Concatenate normalized inp_embd and normalized inp_g
         cur = ggml_concat(ctx0, embd_norm, g_norm, il);
