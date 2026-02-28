@@ -249,7 +249,10 @@ public:
 
     // EAGLE3: Get pointer to target model features extracted for EAGLE3 encoder
     const float * get_eagle3_target_features() const;
-    
+
+    // EAGLE3: Enable feature extraction post-construction (call before first inference)
+    void set_eagle3(llama_model * eagle3_model);
+
     // EAGLE3: Set g_embeddings from encoder output for decoder input
     void set_eagle3_g_embeddings(const float * g_embd, int32_t n_embd, int32_t n_tokens);
 

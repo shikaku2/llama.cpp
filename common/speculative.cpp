@@ -1185,7 +1185,7 @@ common_speculative * common_speculative_init(common_params_speculative & params,
         bool has_draft_model = !params.draft.mparams.path.empty();
 
         // bool has_mtp = false; // TODO: add MTP here
-        bool has_draft_eagle3 = false; // TODO PR-18039: if params.speculative.eagle3
+        bool has_draft_eagle3 = has_draft_model && params.draft.eagle3;
 
         bool has_ngram_cache   = (enabled_configs & (1u << COMMON_SPECULATIVE_TYPE_NGRAM_CACHE));
         bool has_ngram_simple  = (enabled_configs & (1u << COMMON_SPECULATIVE_TYPE_NGRAM_SIMPLE));

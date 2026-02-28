@@ -4082,6 +4082,23 @@ void llama_opt_epoch(
 // EAGLE3 member functions
 //
 
+void llama_context::set_eagle3(llama_model * eagle3_model) {
+    GGML_ASSERT(eagle3_model != nullptr);
+    cparams.eagle3_extract_enabled = true;
+
+    const auto & eagle3_hparams = eagle3_model->hparams;
+    eagle3.extract_layer_indices.assign(
+        eagle3_hparams.eagle3_extract_layers.begin(),
+        eagle3_hparams.eagle3_extract_layers.end()
+    );
+    eagle3.extract_tensors.resize(eagle3.extract_layer_indices.size(), nullptr);
+
+    LLAMA_LOG_INFO("%s: EAGLE3 extraction enabled for layers [%d, %d, %d]\n", __func__,
+                   eagle3.extract_layer_indices[0],
+                   eagle3.extract_layer_indices[1],
+                   eagle3.extract_layer_indices[2]);
+}
+
 const float * llama_context::get_eagle3_target_features() const {
     GGML_ASSERT(!eagle3.target_features.empty() && "EAGLE3 target features not extracted - call llama_encode() on target model first");
     return eagle3.target_features.data();
@@ -4102,6 +4119,10 @@ void llama_context::set_eagle3_g_embeddings(const float * g_embd, int32_t n_embd
 
 const float * llama_get_eagle3_target_features(llama_context * ctx) {
     return ctx->get_eagle3_target_features();
+}
+
+void llama_set_eagle3(llama_context * ctx, llama_model * eagle3_model) {
+    ctx->set_eagle3(eagle3_model);
 }
 
 void llama_set_eagle3_g_embeddings(llama_context * ctx, const float * g_embd, int32_t n_embd, int32_t n_tokens) {

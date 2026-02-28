@@ -906,6 +906,13 @@ extern "C" {
     // Format: [3*n_embd, n_tokens] - use model.hparams.n_embd and batch.n_tokens for dimensions
     LLAMA_API const float * llama_get_eagle3_target_features(struct llama_context * ctx);
 
+    // Enable EAGLE3 feature extraction on an already-created target context.
+    // Must be called before any inference. eagle3_model is the draft model whose
+    // hparams.eagle3_extract_layers determines which target layers to capture.
+    LLAMA_API void llama_set_eagle3(
+            struct llama_context * ctx,
+            struct llama_model   * eagle3_model);
+
     // Set g_embeddings from EAGLE3 encoder output for decoder input
     // g_embd: pointer to encoder output embeddings
     LLAMA_API void llama_set_eagle3_g_embeddings(

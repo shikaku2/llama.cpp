@@ -990,9 +990,22 @@ private:
             }
 
             auto cparams = common_context_params_to_llama(params_dft);
+            if (params_base.speculative.draft.eagle3) {
+                // EAGLE3 current limitation: extracted target features are per-context; multiple slots would overwrite each other.
+                if (params_base.n_parallel > 1) {
+                    SRV_ERR("%s", "EAGLE3 speculative decoding is not supported with n_parallel > 1\n");
+                    return false;
+                }
+                cparams.target_model = model_tgt;
+            }
             ctx_dft.reset(llama_init_from_model(model_dft.get(), cparams));
 
             ctx_dft_seq_rm_type = common_context_can_seq_rm(ctx_dft.get());
+
+            if (params_base.speculative.draft.eagle3) {
+                llama_set_eagle3(ctx_tgt, model_dft.get());
+                SRV_INF("%s", "EAGLE3 feature extraction enabled on target model\n");
+            }
 
             params_base.speculative.draft.ctx_tgt = ctx_tgt;
             params_base.speculative.draft.ctx_dft = ctx_dft.get();
