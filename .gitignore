@@ -147,10 +147,7 @@ flake.lock
 /run-vim.sh
 /run-chat.sh
 /run-spec.sh
-/updatelocal.sh
-/updatejade.sh
-/updatellama.sh
-/testspecdec.py
+/update*.sh
 /.ccache/
 
 # Spec-dec cache / data files
@@ -178,9 +175,6 @@ CTestTestfile.cmake
 /tools/**/Makefile
 /tools/**/CMakeFiles/
 /tests/CMakeFiles/
-/convert_examples.py
-/convert_lora_to_gguf_changed.py
-/train_lora.py
 
 # IDE
 
