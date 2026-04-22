@@ -147,7 +147,40 @@ flake.lock
 /run-vim.sh
 /run-chat.sh
 /run-spec.sh
+/updatelocal.sh
+/updatejade.sh
+/updatellama.sh
+/testspecdec.py
 /.ccache/
+
+# Spec-dec cache / data files
+*.ngram
+*.cache
+*.csv
+
+# In-source cmake artifacts (use out-of-source build/)
+cmake_install.cmake
+CTestTestfile.cmake
+/llama.pc
+/license.cpp
+/ggml/**/Makefile
+/ggml/**/CMakeFiles/
+/ggml/**/*.cmake
+/src/Makefile
+/src/CMakeFiles/
+/pocs/**/Makefile
+/pocs/**/CMakeFiles/
+/vendor/**/Makefile
+/vendor/**/CMakeFiles/
+/vendor/**/*.cmake
+/examples/**/Makefile
+/examples/**/CMakeFiles/
+/tools/**/Makefile
+/tools/**/CMakeFiles/
+/tests/CMakeFiles/
+/convert_examples.py
+/convert_lora_to_gguf_changed.py
+/train_lora.py
 
 # IDE
 
