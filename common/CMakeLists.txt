@@ -102,6 +102,12 @@ add_library(${TARGET}
     sampling.h
     speculative.cpp
     speculative.h
+    suffix-automaton.cpp
+    suffix-automaton.h
+    suffix-trie.cpp
+    suffix-trie.h
+    token-recycling.cpp
+    token-recycling.h
     unicode.cpp
     unicode.h
     jinja/lexer.cpp

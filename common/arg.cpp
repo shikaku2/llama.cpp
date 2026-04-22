@@ -3590,6 +3590,61 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
     ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
 
     add_opt(common_arg(
+        {"--spec-tr-cache"}, "FNAME",
+        "token-recycling cache path; also enables passive learning when token-recycling is not in --spec-type",
+        [](common_params & params, const std::string & value) {
+            params.speculative.token_recycling.cache_path = value;
+        }
+    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
+    add_opt(common_arg(
+        {"--spec-tr-k"}, "N",
+        string_format("token-recycling candidates per token (default: %d)", params.speculative.token_recycling.k),
+        [](common_params & params, int value) {
+            if (value < 1 || value > 1024) {
+                throw std::invalid_argument("token-recycling k must be between 1 and 1024 inclusive");
+            }
+            params.speculative.token_recycling.k = value;
+        }
+    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
+    add_opt(common_arg(
+        {"--spec-tr-decay"}, "P",
+        string_format("token-recycling EMA decay (default: %.3f)", (double) params.speculative.token_recycling.decay),
+        [](common_params & params, float value) {
+            if (value < 0.0f || value > 1.0f) {
+                throw std::invalid_argument("token-recycling decay must be between 0 and 1 inclusive");
+            }
+            params.speculative.token_recycling.decay = value;
+        }
+    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
+    add_opt(common_arg(
+        {"--spec-suffix-trie-cache"}, "FNAME",
+        "suffix-trie cache path",
+        [](common_params & params, const std::string & value) {
+            params.speculative.suffix_trie.cache_path = value;
+        }
+    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
+    add_opt(common_arg(
+        {"--spec-suffix-trie-n"}, "N",
+        string_format("suffix-trie maximum suffix length (default: %d)", params.speculative.suffix_trie.n),
+        [](common_params & params, int value) {
+            if (value < 1 || value > 1024) {
+                throw std::invalid_argument("suffix-trie n must be between 1 and 1024 inclusive");
+            }
+            params.speculative.suffix_trie.n = value;
+        }
+    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
+    add_opt(common_arg(
+        {"--spec-sam-max-query"}, "N",
+        string_format("suffix automaton maximum query length (default: %d)", params.speculative.sam.max_query),
+        [](common_params & params, int value) {
+            if (value < 1 || value > 1024) {
+                throw std::invalid_argument("sam max query must be between 1 and 1024 inclusive");
+            }
+            params.speculative.sam.max_query = value;
+        }
+    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
+
+    add_opt(common_arg(
         {"--spec-ngram-simple-size-n"}, "N",
         string_format("ngram size N for ngram-simple speculative decoding, length of lookup n-gram (default: %d)", params.speculative.ngram_simple.size_n),
         [](common_params & params, int value) {

@@ -164,6 +164,9 @@ enum common_speculative_type {
     COMMON_SPECULATIVE_TYPE_NGRAM_MAP_K4V, // self-speculative decoding with n-gram keys and 4 m-gram values
     COMMON_SPECULATIVE_TYPE_NGRAM_MOD,
     COMMON_SPECULATIVE_TYPE_NGRAM_CACHE,   // self-speculative decoding with 3-level n-gram cache
+    COMMON_SPECULATIVE_TYPE_TOKEN_RECYCLING,
+    COMMON_SPECULATIVE_TYPE_SUFFIX_TRIE,
+    COMMON_SPECULATIVE_TYPE_SAM,
     COMMON_SPECULATIVE_TYPE_COUNT          // number of types, unknown type
 };
 
@@ -337,6 +340,28 @@ struct common_params_speculative_ngram_map {
 struct common_params_speculative_ngram_cache {
     std::string lookup_cache_static;  // path of static ngram cache file for lookup decoding
     std::string lookup_cache_dynamic; // path of dynamic ngram cache file for lookup decoding
+    int32_t min_count   = 2;
+    int32_t min_percent = 60;
+    int32_t min_size    = LLAMA_NGRAM_MIN;
+};
+
+struct common_params_speculative_token_recycling {
+    int32_t k = 16;
+    float decay = 0.99f;
+    float min_score = 0.0f;
+    std::string cache_path;
+};
+
+struct common_params_speculative_suffix_trie {
+    int32_t n = 8;
+    int32_t max_nodes = 1 << 20;
+    int32_t adaptive_min = 1;
+    int32_t adaptive_max = 16;
+    std::string cache_path;
+};
+
+struct common_params_speculative_sam {
+    int32_t max_query = 64;
 };
 
 struct common_params_speculative {
@@ -350,6 +375,9 @@ struct common_params_speculative {
     common_params_speculative_ngram_map ngram_map_k4v;
 
     common_params_speculative_ngram_cache ngram_cache;
+    common_params_speculative_token_recycling token_recycling;
+    common_params_speculative_suffix_trie suffix_trie;
+    common_params_speculative_sam sam;
 
     bool has_dft() const {
         return !draft.mparams.path.empty() || !draft.mparams.hf_repo.empty();

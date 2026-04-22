@@ -57,7 +57,13 @@ bool common_speculative_process(common_speculative * spec, const llama_batch & b
 void common_speculative_draft(common_speculative * spec);
 
 // informs the speculative context that n_accepted tokens were accepted by the target model
-void common_speculative_accept(common_speculative * spec, llama_seq_id, uint16_t n_accepted);
+void common_speculative_accept(
+        common_speculative         * spec,
+        llama_seq_id                 seq_id,
+        uint16_t                     n_accepted,
+        llama_context              * ctx_tgt = nullptr,
+        const std::vector<int32_t> & i_batch_dft = {},
+        const llama_tokens         & ids = {});
 
 // print statistics about the speculative decoding
 void common_speculative_print_stats(const common_speculative * spec);

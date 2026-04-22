@@ -83,7 +83,8 @@ void common_ngram_cache_update(
 // nc_static:          ngram cache generated from a large text corpus, used for validation.
 void common_ngram_cache_draft(
     std::vector<llama_token> & inp, std::vector<llama_token> & draft, int n_draft, int ngram_min, int ngram_max,
-    common_ngram_cache & nc_context, common_ngram_cache & nc_dynamic, common_ngram_cache & nc_static);
+    common_ngram_cache & nc_context, common_ngram_cache & nc_dynamic, common_ngram_cache & nc_static,
+    int min_count = 2, int min_percent = 75);
 
 // Save an ngram cache to a file.
 // ngram_cache: the ngram cache to save.

@@ -56,14 +56,9 @@ static llama_token get_token(const std::vector<llama_token> & inp, const std::ve
     return i < inp.size() ? inp[i] : draft[1 + i - inp.size()];
 }
 
-// If sample size or percentage are below these thresholds the draft is aborted early:
-constexpr int    draft_min_sample_size_lax[LLAMA_NGRAM_MAX] = { 2,  2,  1,  1};
-constexpr int        draft_min_percent_lax[LLAMA_NGRAM_MAX] = {66, 50, 50, 50};
-constexpr int draft_min_sample_size_strict[LLAMA_NGRAM_MAX] = { 4,  3,  2,  2};
-constexpr int     draft_min_percent_strict[LLAMA_NGRAM_MAX] = {75, 66, 66, 66};
 
 // Helper function that tries to draft a token from only the static ngram cache:
-static llama_token try_draft(common_ngram_cache & nc_static, const common_ngram ngram_static) {
+static llama_token try_draft(common_ngram_cache & nc_static, const common_ngram ngram_static, int min_count = 2, int min_percent = 75) {
     common_ngram_cache::iterator part_static_it = nc_static.find(ngram_static);
     if (part_static_it == nc_static.end()) {
         return LLAMA_TOKEN_NULL;
@@ -85,10 +80,10 @@ static llama_token try_draft(common_ngram_cache & nc_static, const common_ngram 
         sum_count_static += count_static;
     }
 
-    if (sum_count_static < draft_min_sample_size_lax[LLAMA_NGRAM_STATIC-1]) {
+    if (sum_count_static < min_count) {
         return LLAMA_TOKEN_NULL;
     }
-    if (100*max_count_static < draft_min_percent_lax[LLAMA_NGRAM_STATIC-1]*sum_count_static) {
+    if (100*max_count_static < min_percent*sum_count_static) {
         return LLAMA_TOKEN_NULL;
     }
     return max_token;
@@ -145,7 +140,8 @@ static llama_token try_draft(
 
 void common_ngram_cache_draft(
     std::vector<llama_token> & inp, std::vector<llama_token> & draft, int n_draft, int ngram_min, int ngram_max,
-    common_ngram_cache & nc_context, common_ngram_cache & nc_dynamic, common_ngram_cache & nc_static
+    common_ngram_cache & nc_context, common_ngram_cache & nc_dynamic, common_ngram_cache & nc_static,
+    int min_count, int min_percent
 ) {
     GGML_ASSERT(draft.size() == 1);
     const int inp_size = inp.size();
@@ -178,14 +174,20 @@ void common_ngram_cache_draft(
             }
             ngrams_cd.push_back(ngram_cd);
         }
-        if (drafted_token == LLAMA_TOKEN_NULL) {
-            drafted_token = try_draft(nc_context, ngrams_cd, part_static, draft_min_sample_size_lax, draft_min_percent_lax);
+        int sample_size[LLAMA_NGRAM_MAX];
+        int percent[LLAMA_NGRAM_MAX];
+        for (int i = 0; i < LLAMA_NGRAM_MAX; ++i) {
+            sample_size[i] = min_count;
+            percent[i]     = min_percent;
         }
         if (drafted_token == LLAMA_TOKEN_NULL) {
-            drafted_token = try_draft(nc_dynamic, ngrams_cd, part_static, draft_min_sample_size_strict, draft_min_percent_strict);
+            drafted_token = try_draft(nc_context, ngrams_cd, part_static, sample_size, percent);
         }
         if (drafted_token == LLAMA_TOKEN_NULL) {
-            drafted_token = try_draft(nc_static, ngram_static);
+            drafted_token = try_draft(nc_dynamic, ngrams_cd, part_static, sample_size, percent);
+        }
+        if (drafted_token == LLAMA_TOKEN_NULL) {
+            drafted_token = try_draft(nc_static, ngram_static, min_count, min_percent);
         }
 
         if (drafted_token == LLAMA_TOKEN_NULL) {

@@ -3109,9 +3109,10 @@ private:
 
                     GGML_ASSERT(slot.spec_i_batch.size() == n_draft + 1);
                     auto accepted = common_sampler_sample_and_accept_n(slot.smpl.get(), slot.ctx_tgt, slot.spec_i_batch, slot.spec_draft);
-                    slot.spec_i_batch.clear();
 
                     GGML_ASSERT(accepted.size() >= 1);
+                    common_speculative_accept(spec.get(), slot.id, accepted.size() - 1, slot.ctx_tgt, slot.spec_i_batch, accepted);
+                    slot.spec_i_batch.clear();
 
                     // check for partial draft acceptance
                     if (accepted.size() < slot.spec_draft.size() + 1) {
@@ -3149,8 +3150,6 @@ private:
                     if (trace > 0) {
                         SLT_INF(slot, "accepted %2zu/%2zu draft tokens\n", accepted.size() - 1, n_draft);
                     }
-
-                    common_speculative_accept(spec.get(), slot.id, accepted.size() - 1);
 
                     slot.spec_draft = std::move(accepted);
                 }
