@@ -1524,5 +1524,51 @@ void common_speculative_print_stats(const common_speculative * spec) {
                 impl->n_gen_tokens,
                 impl->n_acc_tokens,
                 str_perf.c_str());
+
+        if (impl->type == COMMON_SPECULATIVE_TYPE_TOKEN_RECYCLING) {
+            const auto * tr = static_cast<const common_speculative_state_token_recycling *>(impl.get());
+            const int32_t vocab = (int32_t) tr->tr_cache.adj.size();
+            LOG_INF("  token-recycling adjacency: filled=%lld/%d (%.1f%%), updates=%lld, cache=%s\n",
+                    (long long) tr->tr_cache.n_filled, vocab,
+                    vocab > 0 ? 100.0 * (double) tr->tr_cache.n_filled / vocab : 0.0,
+                    (long long) tr->tr_cache.n_updates,
+                    tr->cache_path.empty() ? "memory-only" : tr->cache_path.c_str());
+        }
+        if (impl->type == COMMON_SPECULATIVE_TYPE_SUFFIX_TRIE) {
+            const auto * st = static_cast<const common_speculative_state_suffix_trie *>(impl.get());
+            LOG_INF("  suffix-trie: nodes=%d/%d, cache=%s\n",
+                    st->trie.n_nodes(), st->params.max_nodes,
+                    st->params.cache_path.empty() ? "memory-only" : st->params.cache_path.c_str());
+        }
+        if (impl->type == COMMON_SPECULATIVE_TYPE_SAM) {
+            const auto * s = static_cast<const common_speculative_state_sam *>(impl.get());
+            size_t n_tokens = 0;
+            for (const auto n : s->n_tokens_extended) {
+                n_tokens = std::max(n_tokens, n);
+            }
+            LOG_INF("  sam: states=%d, max_tokens_extended=%zu\n",
+                    s->sam.n_states(), n_tokens);
+        }
     }
+}
+
+std::vector<common_speculative_impl_stats> common_speculative_get_impl_stats(const common_speculative * spec) {
+    std::vector<common_speculative_impl_stats> result;
+    if (spec == nullptr) {
+        return result;
+    }
+    for (const auto & impl : spec->impls) {
+        common_speculative_impl_stats s;
+        s.type_name    = common_speculative_type_to_str(impl->type);
+        s.n_gen_tokens = impl->n_gen_tokens;
+        s.n_acc_tokens = impl->n_acc_tokens;
+        s.ema_rate     = impl->ema_rate;
+        result.push_back(s);
+    }
+    // Sort by type_name so CSV column order is stable regardless of EMA ranking.
+    std::sort(result.begin(), result.end(),
+        [](const common_speculative_impl_stats & a, const common_speculative_impl_stats & b) {
+            return a.type_name < b.type_name;
+        });
+    return result;
 }

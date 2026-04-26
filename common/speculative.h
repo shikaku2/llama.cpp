@@ -68,6 +68,16 @@ void common_speculative_accept(
 // print statistics about the speculative decoding
 void common_speculative_print_stats(const common_speculative * spec);
 
+// per-implementation stats snapshot (for CSV logging)
+struct common_speculative_impl_stats {
+    std::string type_name;
+    size_t n_gen_tokens = 0;
+    size_t n_acc_tokens = 0;
+    float  ema_rate     = 0.0f;
+};
+
+std::vector<common_speculative_impl_stats> common_speculative_get_impl_stats(const common_speculative * spec);
+
 struct common_speculative_deleter {
     void operator()(common_speculative * s) { common_speculative_free(s); }
 };
