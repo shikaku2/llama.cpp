@@ -3143,6 +3143,9 @@ private:
                             slot.prompt.tokens.keep_first(ckpt.n_tokens);
                             slot.smpl = std::move(smpl_save);
 
+                            slot.n_draft_accepted += slot.spec_draft.size() - 1;
+                            slot.n_draft_total    += n_draft;
+
                             continue;
                         }
                     }

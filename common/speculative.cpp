@@ -965,6 +965,7 @@ struct common_speculative_state_suffix_trie : public common_speculative_impl {
     void accept(llama_seq_id /*seq_id*/, uint16_t /*n_accepted*/) override {
         // noop
     }
+
 };
 
 struct common_speculative_state_sam : public common_speculative_impl {
@@ -1030,6 +1031,10 @@ struct common_speculative_state_sam : public common_speculative_impl {
 
     void accept(llama_seq_id /*seq_id*/, uint16_t /*n_accepted*/) override {
         // noop
+    }
+
+    int32_t n_min(const common_params_speculative & /*params*/) const override {
+        return 0;
     }
 };
 

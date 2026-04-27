@@ -246,7 +246,13 @@ int main(int argc, char ** argv) {
         // available logits from the batch and sample the next token until we run out of logits or the sampler
         // disagrees with the draft
         //
-        auto ids = common_sampler_sample_and_accept_n(smpl.get(), ctx_tgt, draft);
+        std::vector<int32_t> i_batch_dft;
+        i_batch_dft.reserve(draft.size() + 1);
+        for (size_t i = 0; i < draft.size() + 1; ++i) {
+            i_batch_dft.push_back((int32_t) i);
+        }
+
+        auto ids = common_sampler_sample_and_accept_n(smpl.get(), ctx_tgt, i_batch_dft, draft);
 
         //LOG_DBG("ids: %s\n", string_from(ctx_tgt, ids).c_str());
 
@@ -280,7 +286,7 @@ int main(int argc, char ** argv) {
             continue;
         }
 
-        common_speculative_accept(spec, seq_id, ids.size() - 1);
+        common_speculative_accept(spec, seq_id, ids.size() - 1, ctx_tgt, i_batch_dft, ids);
 
         // full acceptance: consume the draft and commit accepted tokens
         n_past    += ids.size() - 1;
