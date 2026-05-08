@@ -2858,11 +2858,18 @@ LLM_TN_IMPL::LLM_TN_IMPL(llm_arch arch, llm_tensor tensor, const char * suffix, 
     : arch(arch), tensor(tensor), suffix(suffix), bid(bid), xid(xid) {}
 
 std::string LLM_TN_IMPL::str() const {
-    if (LLM_TENSOR_NAMES.find(tensor) == LLM_TENSOR_NAMES.end()) {
-        GGML_ABORT("unknown tensor name for tensor id %d", static_cast<int>(tensor));
+    auto arch_it = LLM_TENSOR_NAMES.find(arch);
+    if (arch_it == LLM_TENSOR_NAMES.end()) {
+        GGML_ABORT("unknown arch for tensor name lookup, arch id %d", static_cast<int>(arch));
     }
 
-    std::string name = ::format(LLM_TENSOR_NAMES.at(tensor), bid, xid);
+    const auto & arch_tensor_names = arch_it->second;
+    auto tensor_it = arch_tensor_names.find(tensor);
+    if (tensor_it == arch_tensor_names.end()) {
+        GGML_ABORT("unknown tensor name for tensor id %d in arch %d", static_cast<int>(tensor), static_cast<int>(arch));
+    }
+
+    std::string name = ::format(tensor_it->second, bid, xid);
     if (suffix != nullptr) {
         name += ".";
         name += suffix;
