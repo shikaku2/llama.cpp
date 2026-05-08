@@ -1012,6 +1012,23 @@ extern "C" {
     // otherwise: float[n_embd] (1-dimensional)
     LLAMA_API float * llama_get_embeddings_seq(struct llama_context * ctx, llama_seq_id seq_id);
 
+    // Enable extraction of decoder layer outputs after llama_decode().
+    // Layer ids refer to internal tensor names such as "l_out-2".
+    // Extracted buffers are refreshed by each decode call and are valid until the next decode.
+    LLAMA_API void llama_enable_hidden_state_extraction(
+            struct llama_context * ctx,
+                  const int32_t  * layer_indices,
+                        int32_t    n_layers);
+
+    // Get extracted hidden states for a layer enabled via llama_enable_hidden_state_extraction().
+    // The returned buffer is row-major [n_tokens, hidden_size] and is valid until the next decode.
+    // Returns NULL if the layer was not enabled or no matching tensor was produced by the last decode.
+    LLAMA_API const float * llama_get_layer_hidden_states(
+            const struct llama_context * ctx,
+                        int32_t         layer_idx,
+                        int32_t       * out_n_tokens,
+                        int32_t       * out_hidden_size);
+
     //
     // backend sampling API [EXPERIMENTAL]
     // note: use only if the llama_context was created with at least one llama_sampler_seq_config

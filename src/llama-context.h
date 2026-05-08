@@ -11,6 +11,8 @@
 #include "ggml-opt.h"
 
 #include <map>
+#include <set>
+#include <unordered_map>
 #include <vector>
 
 struct llama_model;
@@ -83,6 +85,9 @@ struct llama_context {
     float * get_embeddings();
     float * get_embeddings_ith(int32_t i);
     float * get_embeddings_seq(llama_seq_id seq_id);
+
+    void enable_hidden_state_extraction(const int32_t * layer_indices, int32_t n_layers);
+    const float * get_layer_hidden_states(int32_t layer_idx, int32_t * out_n_tokens, int32_t * out_hidden_size) const;
 
     llama_token * get_sampled_tokens() const;
     llama_token   get_sampled_token_ith(int32_t idx);
@@ -221,6 +226,8 @@ private:
     // map the output row index `i` to batch index
     int64_t output_resolve_row(int32_t i) const;
 
+    void copy_hidden_states_from_graph(ggml_cgraph * gf);
+
     //
     // graph
     //
@@ -300,6 +307,15 @@ private:
     // sequence embeddings output (map of [n_embd] vectors)
     // populated only when pooling_type != LLAMA_POOLING_TYPE_NONE
     std::map<llama_seq_id, std::vector<float>> embd_seq;
+
+    struct hidden_state_info {
+        int32_t n_tokens = 0;
+        int32_t n_embd   = 0;
+        std::vector<float> data;
+    };
+
+    std::set<int32_t> hidden_state_layers;
+    std::unordered_map<int32_t, hidden_state_info> hidden_state_cache;
 
     // reuse the batch_allocr to avoid unnecessary memory allocations
     std::unique_ptr<llama_batch_allocr> balloc;

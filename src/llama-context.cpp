@@ -13,6 +13,7 @@
 
 #include <cinttypes>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <stdexcept>
@@ -860,6 +861,35 @@ float * llama_context::get_embeddings_seq(llama_seq_id seq_id) {
     return it->second.data();
 }
 
+void llama_context::enable_hidden_state_extraction(const int32_t * layer_indices, int32_t n_layers) {
+    hidden_state_layers.clear();
+    hidden_state_cache.clear();
+
+    for (int32_t i = 0; i < n_layers; ++i) {
+        if (layer_indices[i] >= 0) {
+            hidden_state_layers.insert(layer_indices[i]);
+        }
+    }
+
+    sched_need_reserve = true;
+}
+
+const float * llama_context::get_layer_hidden_states(int32_t layer_idx, int32_t * out_n_tokens, int32_t * out_hidden_size) const {
+    auto it = hidden_state_cache.find(layer_idx);
+    if (it == hidden_state_cache.end()) {
+        return nullptr;
+    }
+
+    if (out_n_tokens) {
+        *out_n_tokens = it->second.n_tokens;
+    }
+    if (out_hidden_size) {
+        *out_hidden_size = it->second.n_embd;
+    }
+
+    return it->second.data.data();
+}
+
 llama_token llama_context::get_sampled_token_ith(int32_t idx) {
     output_reorder();
 
@@ -1530,6 +1560,54 @@ static bool needs_raw_logits(const llama_ubatch & ubatch, const std::map<llama_s
     return false; // all sequences use backend sampling
 }
 
+void llama_context::copy_hidden_states_from_graph(ggml_cgraph * gf) {
+    if (hidden_state_layers.empty()) {
+        return;
+    }
+
+    for (int i = 0; i < ggml_graph_n_nodes(gf); ++i) {
+        ggml_tensor * tensor = ggml_graph_node(gf, i);
+
+        const char prefix[] = "l_out-";
+        if (strncmp(tensor->name, prefix, sizeof(prefix) - 1) != 0) {
+            continue;
+        }
+
+        char * end = nullptr;
+        const long layer = strtol(tensor->name + sizeof(prefix) - 1, &end, 10);
+        if (end == tensor->name + sizeof(prefix) - 1 || *end != '\0') {
+            continue;
+        }
+        if (layer < 0 || layer > INT32_MAX || hidden_state_layers.find((int32_t) layer) == hidden_state_layers.end()) {
+            continue;
+        }
+        if (tensor->type != GGML_TYPE_F32 || tensor->ne[0] <= 0 || tensor->ne[1] <= 0) {
+            LLAMA_LOG_WARN("%s: cannot extract hidden states from tensor %s with type %s and shape [%" PRId64 ", %" PRId64 "]\n",
+                    __func__, tensor->name, ggml_type_name(tensor->type), tensor->ne[0], tensor->ne[1]);
+            continue;
+        }
+
+        hidden_state_info & info = hidden_state_cache[(int32_t) layer];
+        const int32_t n_embd = (int32_t) tensor->ne[0];
+        const int32_t n_tokens = (int32_t) tensor->ne[1];
+
+        if (info.n_embd != 0 && info.n_embd != n_embd) {
+            LLAMA_LOG_WARN("%s: hidden state size changed for layer %ld: %d -> %d\n",
+                    __func__, layer, info.n_embd, n_embd);
+            continue;
+        }
+
+        info.n_embd = n_embd;
+        const size_t offset = info.data.size();
+        info.data.resize(offset + (size_t) n_embd * n_tokens);
+
+        ggml_backend_t backend = ggml_backend_sched_get_tensor_backend(sched.get(), tensor);
+        GGML_ASSERT(backend != nullptr);
+        ggml_backend_tensor_get_async(backend, tensor, info.data.data() + offset, 0, ggml_nbytes(tensor));
+        info.n_tokens += n_tokens;
+    }
+}
+
 int llama_context::decode(const llama_batch & batch_inp) {
     GGML_ASSERT((!batch_inp.token && batch_inp.embd) || (batch_inp.token && !batch_inp.embd)); // NOLINT
 
@@ -1608,6 +1686,7 @@ int llama_context::decode(const llama_batch & batch_inp) {
     // TODO: this clear of the buffer can easily be forgotten - need something better
     embd_seq.clear();
     output_swaps.clear();
+    hidden_state_cache.clear();
 
     sched_reserve();
 
@@ -1733,6 +1812,8 @@ int llama_context::decode(const llama_batch & batch_inp) {
         if (t_embd && res->get_embd_pooled()) {
             t_embd = res->get_embd_pooled();
         }
+
+        copy_hidden_states_from_graph(res->get_gf());
 
         // extract logits
         if (logits.data && t_logits && n_outputs > 0 && needs_raw_logits(ubatch, sampling.samplers)) {
@@ -2204,6 +2285,10 @@ llm_graph_cb llama_context::graph_get_cb() const {
             ggml_format_name(cur, "%s-%d", name, il);
         } else {
             ggml_set_name(cur, name);
+        }
+
+        if (il >= 0 && strcmp(name, "l_out") == 0 && hidden_state_layers.find(il) != hidden_state_layers.end()) {
+            ggml_set_output(cur);
         }
 
         // norm may be automatically assigned to the backend of the previous layer, increasing data transfer between backends
@@ -3434,6 +3519,16 @@ float * llama_get_embeddings_seq(llama_context * ctx, llama_seq_id seq_id) {
     ctx->synchronize();
 
     return ctx->get_embeddings_seq(seq_id);
+}
+
+void llama_enable_hidden_state_extraction(llama_context * ctx, const int32_t * layer_indices, int32_t n_layers) {
+    ctx->enable_hidden_state_extraction(layer_indices, n_layers);
+}
+
+const float * llama_get_layer_hidden_states(const llama_context * ctx, int32_t layer_idx, int32_t * out_n_tokens, int32_t * out_hidden_size) {
+    const_cast<llama_context *>(ctx)->synchronize();
+
+    return ctx->get_layer_hidden_states(layer_idx, out_n_tokens, out_hidden_size);
 }
 
 bool llama_set_sampler(llama_context * ctx, llama_seq_id seq_id, llama_sampler * smpl) {

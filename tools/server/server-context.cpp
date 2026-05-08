@@ -638,6 +638,10 @@ private:
 
     json json_webui_settings = json::object();
 
+    std::string slot_persistent_file;
+    bool slot_persistent_enabled  = false;
+    bool slot_persistent_restored = false;
+
     // Necessary similarity of prompt for slot selection
     float slot_prompt_similarity = 0.0f;
 
@@ -670,6 +674,236 @@ private:
         prompt_cache->update();
     }
 
+    json slot_persistent_metadata(const server_slot & slot) const {
+        char model_desc[1024];
+        llama_model_desc(model, model_desc, sizeof(model_desc));
+
+        return json {
+            { "schema",              1 },
+            { "model_path",          params_base.model.path },
+            { "model_hf_repo",       params_base.model.hf_repo },
+            { "model_hf_file",       params_base.model.hf_file },
+            { "model_name",          params_base.model.name },
+            { "model_desc",          model_desc },
+            { "model_n_ctx_train",   llama_model_n_ctx_train(model) },
+            { "n_ctx",               n_ctx },
+            { "slot_n_ctx",          slot.n_ctx },
+            { "n_parallel",          params_base.n_parallel },
+            { "cache_type_k",        ggml_type_name(params_base.cache_type_k) },
+            { "cache_type_v",        ggml_type_name(params_base.cache_type_v) },
+            { "flash_attn_type",     (int) params_base.flash_attn_type },
+            { "swa_full",            params_base.swa_full },
+            { "kv_unified",          params_base.kv_unified },
+            { "chat_template",       params_base.chat_template },
+            { "use_jinja",           params_base.use_jinja },
+        };
+    }
+
+    bool slot_persistent_read_file(const std::string & filepath, json & metadata, std::vector<uint8_t> & state_data) {
+        static constexpr uint32_t SLOT_PERSISTENT_MAGIC   = 0x4650534c; // LSPF
+        static constexpr uint32_t SLOT_PERSISTENT_VERSION = 1;
+
+        std::ifstream file(filepath, std::ios::binary);
+        if (!file) {
+            SRV_WRN("failed to open persistent slot file '%s'\n", filepath.c_str());
+            return false;
+        }
+
+        uint32_t magic = 0;
+        uint32_t version = 0;
+        uint64_t metadata_size = 0;
+        uint64_t state_size = 0;
+
+        file.read(reinterpret_cast<char *>(&magic), sizeof(magic));
+        file.read(reinterpret_cast<char *>(&version), sizeof(version));
+        file.read(reinterpret_cast<char *>(&metadata_size), sizeof(metadata_size));
+        file.read(reinterpret_cast<char *>(&state_size), sizeof(state_size));
+        if (!file || magic != SLOT_PERSISTENT_MAGIC || version != SLOT_PERSISTENT_VERSION) {
+            SRV_WRN("persistent slot file '%s' has an incompatible wrapper\n", filepath.c_str());
+            return false;
+        }
+
+        std::string metadata_text(metadata_size, '\0');
+        state_data.resize(state_size);
+        file.read(metadata_text.data(), metadata_text.size());
+        file.read(reinterpret_cast<char *>(state_data.data()), state_data.size());
+        if (!file) {
+            SRV_WRN("failed to read persistent slot file '%s'\n", filepath.c_str());
+            return false;
+        }
+
+        try {
+            metadata = json::parse(metadata_text);
+        } catch (const std::exception & e) {
+            SRV_WRN("failed to parse persistent slot metadata from '%s': %s\n", filepath.c_str(), e.what());
+            return false;
+        }
+
+        return true;
+    }
+
+    bool slot_persistent_write_file(const std::string & filepath, const json & metadata, const std::vector<uint8_t> & state_data) {
+        static constexpr uint32_t SLOT_PERSISTENT_MAGIC   = 0x4650534c; // LSPF
+        static constexpr uint32_t SLOT_PERSISTENT_VERSION = 1;
+
+        const std::string metadata_text = metadata.dump();
+        const uint64_t metadata_size = metadata_text.size();
+        const uint64_t state_size = state_data.size();
+
+        std::ofstream file(filepath, std::ios::binary);
+        if (!file) {
+            SRV_WRN("failed to open persistent slot temporary file '%s'\n", filepath.c_str());
+            return false;
+        }
+
+        file.write(reinterpret_cast<const char *>(&SLOT_PERSISTENT_MAGIC), sizeof(SLOT_PERSISTENT_MAGIC));
+        file.write(reinterpret_cast<const char *>(&SLOT_PERSISTENT_VERSION), sizeof(SLOT_PERSISTENT_VERSION));
+        file.write(reinterpret_cast<const char *>(&metadata_size), sizeof(metadata_size));
+        file.write(reinterpret_cast<const char *>(&state_size), sizeof(state_size));
+        file.write(metadata_text.data(), metadata_text.size());
+        file.write(reinterpret_cast<const char *>(state_data.data()), state_data.size());
+        if (!file) {
+            SRV_WRN("failed to write persistent slot temporary file '%s'\n", filepath.c_str());
+            return false;
+        }
+
+        return true;
+    }
+
+    void slot_persistent_restore() {
+        if (!slot_persistent_enabled) {
+            return;
+        }
+        if (slots.empty()) {
+            SRV_WRN("%s", "slot persistent restore skipped: no slots initialized\n");
+            return;
+        }
+        if (mctx != nullptr) {
+            SRV_WRN("%s", "slot persistent restore disabled for multimodal contexts\n");
+            slot_persistent_enabled = false;
+            return;
+        }
+        if (!std::filesystem::exists(slot_persistent_file)) {
+            SRV_INF("slot persistent file not found, starting with empty slot: %s\n", slot_persistent_file.c_str());
+            return;
+        }
+
+        server_slot & slot = slots[0];
+        GGML_ASSERT(!slot.is_processing());
+
+        const int64_t t_start = ggml_time_us();
+
+        json saved_metadata;
+        std::vector<uint8_t> state_data;
+        if (!slot_persistent_read_file(slot_persistent_file, saved_metadata, state_data)) {
+            slot.prompt.tokens.clear();
+            return;
+        }
+
+        const json expected_metadata = slot_persistent_metadata(slot);
+        if (saved_metadata != expected_metadata) {
+            slot.prompt.tokens.clear();
+            SRV_WRN("persistent slot metadata mismatch for '%s', skipping restore\n", slot_persistent_file.c_str());
+            return;
+        }
+
+        const std::string state_tmp_file = slot_persistent_file + ".restore.tmp";
+        {
+            std::ofstream state_tmp(state_tmp_file, std::ios::binary);
+            state_tmp.write(reinterpret_cast<const char *>(state_data.data()), state_data.size());
+            if (!state_tmp) {
+                slot.prompt.tokens.clear();
+                SRV_WRN("failed to write temporary persistent slot state '%s'\n", state_tmp_file.c_str());
+                return;
+            }
+        }
+
+        llama_tokens tokens;
+        tokens.resize(slot.n_ctx);
+        size_t token_count = 0;
+        const size_t nread = llama_state_seq_load_file(ctx, state_tmp_file.c_str(), slot.id, tokens.data(), tokens.size(), &token_count);
+        std::error_code remove_ec;
+        std::filesystem::remove(state_tmp_file, remove_ec);
+        if (nread == 0) {
+            slot.prompt.tokens.clear();
+            SRV_WRN("failed to restore persistent slot from '%s'\n", slot_persistent_file.c_str());
+            return;
+        }
+
+        tokens.resize(token_count);
+        slot.prompt.tokens.clear();
+        slot.prompt.tokens.insert(tokens);
+        slot_persistent_restored = true;
+
+        const double t_restore_ms = (ggml_time_us() - t_start) / 1000.0;
+        SRV_INF("restored persistent slot from '%s': tokens = %zu, bytes = %zu, time = %.2f ms\n",
+                slot_persistent_file.c_str(), token_count, state_data.size(), t_restore_ms);
+    }
+
+    void slot_persistent_save(int id_slot) {
+        if (!slot_persistent_enabled || id_slot != 0) {
+            return;
+        }
+
+        server_slot * slot = get_slot_by_id(id_slot);
+        if (slot == nullptr) {
+            SRV_WRN("slot persistent save skipped: invalid slot id %d\n", id_slot);
+            return;
+        }
+        if (slot->is_processing()) {
+            SLT_DBG(*slot, "%s", "slot persistent save skipped: slot is processing\n");
+            return;
+        }
+        if (slot->prompt.n_tokens() == 0) {
+            SLT_DBG(*slot, "%s", "slot persistent save skipped: empty prompt\n");
+            return;
+        }
+        if (slot->prompt.tokens.has_media()) {
+            SLT_WRN(*slot, "%s", "slot persistent save skipped: multimodal prompt\n");
+            return;
+        }
+
+        const std::string tmp_file = slot_persistent_file + ".tmp";
+        const std::string state_tmp_file = slot_persistent_file + ".state.tmp";
+        const size_t token_count = slot->prompt.tokens.size();
+        const llama_tokens & tokens = slot->prompt.tokens.get_tokens();
+
+        const int64_t t_start = ggml_time_us();
+        const size_t nwrite = llama_state_seq_save_file(ctx, state_tmp_file.c_str(), slot->id, tokens.data(), token_count);
+        if (nwrite == 0) {
+            SLT_WRN(*slot, "failed to save persistent slot state to temporary file '%s'\n", state_tmp_file.c_str());
+            return;
+        }
+
+        std::vector<uint8_t> state_data(nwrite);
+        {
+            std::ifstream state_tmp(state_tmp_file, std::ios::binary);
+            state_tmp.read(reinterpret_cast<char *>(state_data.data()), state_data.size());
+            if (!state_tmp) {
+                SLT_WRN(*slot, "failed to read persistent slot state from temporary file '%s'\n", state_tmp_file.c_str());
+                return;
+            }
+        }
+        std::error_code remove_ec;
+        std::filesystem::remove(state_tmp_file, remove_ec);
+
+        if (!slot_persistent_write_file(tmp_file, slot_persistent_metadata(*slot), state_data)) {
+            return;
+        }
+
+        std::error_code ec;
+        std::filesystem::rename(tmp_file, slot_persistent_file, ec);
+        if (ec) {
+            SLT_WRN(*slot, "failed to replace persistent slot file '%s': %s\n",
+                    slot_persistent_file.c_str(), ec.message().c_str());
+            return;
+        }
+
+        const double t_save_ms = (ggml_time_us() - t_start) / 1000.0;
+        SLT_INF(*slot, "saved persistent slot to '%s': tokens = %zu, bytes = %zu, time = %.2f ms\n",
+                slot_persistent_file.c_str(), token_count, nwrite, t_save_ms);
+    }
+
     void handle_sleeping_state(bool new_state) {
         GGML_ASSERT(sleeping != new_state);
         if (new_state) {
@@ -692,6 +926,23 @@ private:
         SRV_INF("loading model '%s'\n", params.model.path.c_str());
 
         params_base = params;
+        slot_persistent_file     = params_base.slot_persistent_file;
+        slot_persistent_enabled  = !slot_persistent_file.empty();
+        slot_persistent_restored = false;
+
+        if (slot_persistent_enabled && params_base.n_parallel != 1) {
+            SRV_WRN("slot persistent file requires --parallel 1, disabling: n_parallel = %d\n", params_base.n_parallel);
+            slot_persistent_enabled = false;
+        }
+
+        if (slot_persistent_enabled) {
+            const std::filesystem::path persistent_path(slot_persistent_file);
+            const std::filesystem::path parent_path = persistent_path.parent_path();
+            if (!parent_path.empty() && !std::filesystem::exists(parent_path)) {
+                SRV_WRN("slot persistent file directory does not exist, disabling: %s\n", parent_path.string().c_str());
+                slot_persistent_enabled = false;
+            }
+        }
 
         llama_init = common_init_from_params(params_base);
 
@@ -864,6 +1115,7 @@ private:
 
             slot.callback_on_release = [this](int id_slot) {
                 queue_tasks.pop_deferred_task(id_slot);
+                slot_persistent_save(id_slot);
             };
 
             slot.reset();
@@ -921,6 +1173,8 @@ private:
 
         model_aliases = params_base.model_alias;
         model_tags    = params_base.model_tags;
+
+        slot_persistent_restore();
 
         // propagate new defaults back to caller
         params = params_base;

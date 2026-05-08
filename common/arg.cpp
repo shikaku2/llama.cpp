@@ -3020,6 +3020,13 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
+        {"--slot-persistent-file"}, "FILE",
+        "path to automatically restore/save slot 0 sequence state on server startup/slot release (requires --parallel 1)",
+        [](common_params & params, const std::string & value) {
+            params.slot_persistent_file = value;
+        }
+    ).set_examples({LLAMA_EXAMPLE_SERVER}));
+    add_opt(common_arg(
         {"--media-path"}, "PATH",
         "directory for loading local media files; files can be accessed via file:// URLs using relative paths (default: disabled)",
         [](common_params & params, const std::string & value) {
