@@ -4,6 +4,7 @@
 #include "speculative.h"
 #include "log.h"
 #include "llama.h"
+#include "chat.h"
 
 #include <clocale>
 #include <cstdio>
@@ -90,8 +91,9 @@ int main(int argc, char ** argv) {
     }
 
     // Tokenize the prompt
+    const std::string prompt = params.prompt;
     std::vector<llama_token> inp;
-    inp = common_tokenize(ctx_tgt, params.prompt, true, true);
+    inp = common_tokenize(ctx_tgt, prompt, true, true);
 
     if (llama_n_ctx(ctx_tgt) < (uint32_t) inp.size()) {
         LOG_ERR("%s: the prompt exceeds the context size (%d tokens, ctx %d)\n", __func__, (int) inp.size(), llama_n_ctx(ctx_tgt));
@@ -130,17 +132,37 @@ int main(int argc, char ** argv) {
     common_sampler_ptr smpl(common_sampler_init(model_tgt, params.sampling));
 
     // eval the prompt
-    llama_decode(ctx_tgt,       llama_batch_get_one(inp.data(), inp.size() - 1));
-    llama_decode(ctx_dft.get(), llama_batch_get_one(inp.data(), inp.size() - 1));
+    llama_token id_last;
+    llama_tokens prompt_tgt;
+    int n_past;
 
-    // note: keep the last token separate!
-    llama_token id_last = inp.back();
+    if (params.speculative.draft.eagle3) {
+        // Target model decodes full prompt and sample first token and intermediate features are extracted
+        llama_decode(ctx_tgt, llama_batch_get_one(inp.data(), inp.size()));
 
-    // all tokens currently in the target context
-    llama_tokens prompt_tgt(inp.begin(), inp.end() - 1);
-    prompt_tgt.reserve(llama_n_ctx(ctx_tgt));
+        id_last = common_sampler_sample(smpl, ctx_tgt, -1);
+        common_sampler_accept(smpl, id_last, true);
+        LOG("%s", common_token_to_piece(ctx_tgt, id_last).c_str());
+        n_predict++;
 
-    int n_past = inp.size() - 1;
+        // all tokens currently in the target context
+        prompt_tgt.assign(inp.begin(), inp.end());
+        prompt_tgt.reserve(llama_n_ctx(ctx_tgt));
+
+        n_past = inp.size();
+    } else {
+        llama_decode(ctx_tgt, llama_batch_get_one(inp.data(), inp.size() - 1));
+        llama_decode(ctx_dft.get(), llama_batch_get_one(inp.data(), inp.size() - 1));
+
+        // note: keep the last token separate!
+        id_last = inp.back();
+
+        // all tokens currently in the target context
+        prompt_tgt.assign(inp.begin(), inp.end() - 1);
+        prompt_tgt.reserve(llama_n_ctx(ctx_tgt));
+
+        n_past = inp.size() - 1;
+    }
 
     // init the speculator
     const auto & params_spec = params.speculative;

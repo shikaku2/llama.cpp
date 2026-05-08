@@ -17,6 +17,13 @@ std::vector<enum common_speculative_type> common_speculative_types_from_names(co
 // convert string to type
 enum common_speculative_type common_speculative_type_from_name(const std::string & name);
 
+// EAGLE3: Initialize speculative decoding with EAGLE3 encoder and decoder contexts
+struct common_speculative * common_speculative_init_eagle3(
+        struct llama_context * ctx_tgt,
+        struct llama_context * ctx_encoder,
+        struct llama_context * ctx_decoder
+);
+
 // convert type to string
 std::string common_speculative_type_to_str(enum common_speculative_type type);
 

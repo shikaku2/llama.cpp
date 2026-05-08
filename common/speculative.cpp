@@ -19,6 +19,7 @@
 #include <fstream>
 #include <iomanip>
 #include <map>
+#include <sstream>
 #include <cinttypes>
 
 #define SPEC_VOCAB_MAX_SIZE_DIFFERENCE  128
@@ -52,12 +53,14 @@ struct common_speculative_config {
     common_speculative_config(common_speculative_type t,
             const common_params_speculative & p = common_params_speculative{}) : type(t), params(p) {}
 };
+bool common_speculative_are_compatible(
+    const struct llama_context * ctx_tgt,
+    const struct llama_context * ctx_dft) {
+    const struct llama_model * model_tgt = llama_get_model(ctx_tgt);
+    const struct llama_model * model_dft = llama_get_model(ctx_dft);
 
-static bool common_speculative_are_compatible(
-    const llama_model * model_tgt,
-    const llama_model * model_dft) {
-    const llama_vocab * vocab_tgt = llama_model_get_vocab(model_tgt);
-    const llama_vocab * vocab_dft = llama_model_get_vocab(model_dft);
+    const struct llama_vocab * vocab_tgt = llama_model_get_vocab(model_tgt);
+    const struct llama_vocab * vocab_dft = llama_model_get_vocab(model_dft);
 
     const bool vocab_type_tgt = llama_vocab_type(vocab_tgt);
     LOG_DBG("%s: vocab_type tgt: %d\n", __func__, vocab_type_tgt);
@@ -1096,6 +1099,27 @@ const char * common_speculative_all_types_str() {
         return common_speculative_type_name_str(types);
     }();
     return all_types_str.c_str();
+}
+
+std::vector<common_speculative_type> common_speculative_types_from_str(const std::string & str) {
+    std::vector<common_speculative_type> result;
+    std::string token;
+    std::istringstream ss(str);
+    while (std::getline(ss, token, ',')) {
+        if (token == "none") {
+            return {};        }
+        const auto t = common_speculative_type_from_name(token);
+        if (t == COMMON_SPECULATIVE_TYPE_COUNT) {
+            throw std::invalid_argument("unknown speculative decoding type: " + token);
+        }
+        for (const auto & existing : result) {
+            if (existing == t) {
+                throw std::invalid_argument("duplicate speculative decoding types are not allowed: " + token);
+            }
+        }
+        result.push_back(t);
+    }
+    return result;
 }
 
 std::string common_speculative_type_to_str(common_speculative_type type) {

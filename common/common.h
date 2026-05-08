@@ -306,6 +306,8 @@ struct common_params_speculative_draft {
     float p_split = 0.1f;  // speculative decoding split probability
     float p_min   = 0.75f; // minimum speculative decoding probability (greedy)
 
+    bool    eagle3 = false; // use EAGLE3 speculative decoding
+
     common_params_model mparams;
 
     llama_context * ctx_tgt = nullptr;

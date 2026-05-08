@@ -247,6 +247,12 @@ public:
 
     bool set_sampler(llama_seq_id seq_id, llama_sampler * sampler);
 
+    // EAGLE3: Get pointer to target model features extracted for EAGLE3 encoder
+    const float * get_eagle3_target_features() const;
+    
+    // EAGLE3: Set g_embeddings from encoder output for decoder input
+    void set_eagle3_g_embeddings(const float * g_embd, int32_t n_embd, int32_t n_tokens);
+
 private:
     llm_graph_params graph_params(
                         llm_graph_result * res,
@@ -255,6 +261,9 @@ private:
                           llm_graph_type   gtype) const;
 
     llm_graph_cb graph_get_cb() const;
+
+    // EAGLE3: Extract intermediate layer features from target model
+    void extract_eagle3_features(const llama_ubatch & ubatch);
 
     // TODO: read/write lora adapters and cvec
     size_t state_write_data(llama_io_write_i & io);
@@ -275,6 +284,9 @@ private:
     llama_adapter_loras_ptr loras;
 
     llama_cross cross; // TODO: tmp for handling cross-attention - need something better probably
+    
+    mutable llama_eagle3 eagle3; // EAGLE3 draft model support - stores features from target model
+                                 // mutable because it's modified during graph building (const function)
 
     std::unique_ptr<llama_memory_i> memory;
 
