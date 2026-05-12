@@ -51,7 +51,7 @@ REPEATS=50
 LOG_FILE="specdec_results.log"
 TEST_NGRAM_ARG="all"
 LCD_WIPE=0
-LLAMA_SERVER="/home/aaron/llama.cpp-spec-dec/build/bin/llama-server"
+LLAMA_SERVER="/home/aaron/llamacpp/llama.cpp-spec-dec/build/bin/llama-server"
 SRV_LOG="/tmp/specdec_srv_$$.log"
 
 # ---------------------------------------------------------------------------

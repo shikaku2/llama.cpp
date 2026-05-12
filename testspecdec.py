@@ -57,7 +57,7 @@ QUESTIONS = [
 
 ALL_NGRAM_TYPES = ["ngram-simple", "ngram-map-k", "ngram-map-k4v", "ngram-mod", "ngram-cache"]
 
-LLAMA_SERVER = "/home/aaron/llama.cpp-spec-dec/build/bin/llama-server"
+LLAMA_SERVER = "/home/aaron/llamacpp/llama.cpp-spec-dec/build/bin/llama-server"
 SRV_LOG = f"/tmp/specdec_srv_{os.getpid()}.log"
 
 

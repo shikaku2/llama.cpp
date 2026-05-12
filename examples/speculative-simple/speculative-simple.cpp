@@ -140,8 +140,8 @@ int main(int argc, char ** argv) {
         // Target model decodes full prompt and sample first token and intermediate features are extracted
         llama_decode(ctx_tgt, llama_batch_get_one(inp.data(), inp.size()));
 
-        id_last = common_sampler_sample(smpl, ctx_tgt, -1);
-        common_sampler_accept(smpl, id_last, true);
+        id_last = common_sampler_sample(smpl.get(), ctx_tgt, -1);
+        common_sampler_accept(smpl.get(), id_last, true);
         LOG("%s", common_token_to_piece(ctx_tgt, id_last).c_str());
         n_predict++;
 

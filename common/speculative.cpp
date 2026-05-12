@@ -53,7 +53,7 @@ struct common_speculative_config {
     common_speculative_config(common_speculative_type t,
             const common_params_speculative & p = common_params_speculative{}) : type(t), params(p) {}
 };
-bool common_speculative_are_compatible(
+static bool common_speculative_are_compatible(
     const struct llama_context * ctx_tgt,
     const struct llama_context * ctx_dft) {
     const struct llama_model * model_tgt = llama_get_model(ctx_tgt);
@@ -227,7 +227,7 @@ struct common_speculative_state_draft : public common_speculative_impl {
             smpl.reset(common_sampler_init(llama_get_model(ctx_dft), params));
         }
 
-        const bool vocab_cmpt = common_speculative_are_compatible(llama_get_model(ctx_tgt), llama_get_model(ctx_dft));
+        const bool vocab_cmpt = common_speculative_are_compatible(ctx_tgt, ctx_dft);
         LOG_DBG("%s: vocab_cmpt = %d\n", __func__, vocab_cmpt);
 
         if (!vocab_cmpt) {
@@ -1036,9 +1036,6 @@ struct common_speculative_state_sam : public common_speculative_impl {
         // noop
     }
 
-    int32_t n_min(const common_params_speculative & /*params*/) const override {
-        return 0;
-    }
 };
 
 struct common_speculative {
@@ -1101,7 +1098,7 @@ const char * common_speculative_all_types_str() {
     return all_types_str.c_str();
 }
 
-std::vector<common_speculative_type> common_speculative_types_from_str(const std::string & str) {
+static std::vector<common_speculative_type> common_speculative_types_from_str(const std::string & str) {
     std::vector<common_speculative_type> result;
     std::string token;
     std::istringstream ss(str);

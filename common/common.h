@@ -344,7 +344,7 @@ struct common_params_speculative_ngram_cache {
     std::string lookup_cache_dynamic; // path of dynamic ngram cache file for lookup decoding
     int32_t min_count   = 2;
     int32_t min_percent = 60;
-    int32_t min_size    = LLAMA_NGRAM_MIN;
+    int32_t min_size    = 1;
 };
 
 struct common_params_speculative_token_recycling {

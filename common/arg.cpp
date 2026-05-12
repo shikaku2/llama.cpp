@@ -3470,7 +3470,7 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         [](common_params & params) {
             params.speculative.draft.eagle3 = true;
         }
-    ).set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_CLI}));
+    ).set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
     add_opt(common_arg(
         {"--spec-draft-override-tensor", "-otd", "--override-tensor-draft"}, "<tensor name pattern>=<buffer type>,...",
         "override tensor buffer type for draft model", [](common_params & params, const std::string & value) {
@@ -3623,11 +3623,12 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
     add_opt(common_arg(
         {"--spec-tr-decay"}, "P",
         string_format("token-recycling EMA decay (default: %.3f)", (double) params.speculative.token_recycling.decay),
-        [](common_params & params, float value) {
-            if (value < 0.0f || value > 1.0f) {
+        [](common_params & params, const std::string & value) {
+            const float decay = std::stof(value);
+            if (decay < 0.0f || decay > 1.0f) {
                 throw std::invalid_argument("token-recycling decay must be between 0 and 1 inclusive");
             }
-            params.speculative.token_recycling.decay = value;
+            params.speculative.token_recycling.decay = decay;
         }
     ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
     add_opt(common_arg(

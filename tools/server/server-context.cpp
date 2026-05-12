@@ -19,8 +19,9 @@
 #include <cstddef>
 #include <cinttypes>
 #include <exception>
-#include <memory>
+#include <fstream>
 #include <filesystem>
+#include <memory>
 #include <utility>
 
 // fix problem with std::min and std::max
@@ -676,7 +677,7 @@ private:
 
     json slot_persistent_metadata(const server_slot & slot) const {
         char model_desc[1024];
-        llama_model_desc(model, model_desc, sizeof(model_desc));
+        llama_model_desc(model_tgt, model_desc, sizeof(model_desc));
 
         return json {
             { "schema",              1 },
@@ -685,7 +686,7 @@ private:
             { "model_hf_file",       params_base.model.hf_file },
             { "model_name",          params_base.model.name },
             { "model_desc",          model_desc },
-            { "model_n_ctx_train",   llama_model_n_ctx_train(model) },
+            { "model_n_ctx_train",   llama_model_n_ctx_train(model_tgt) },
             { "n_ctx",               n_ctx },
             { "slot_n_ctx",          slot.n_ctx },
             { "n_parallel",          params_base.n_parallel },
@@ -821,7 +822,7 @@ private:
         llama_tokens tokens;
         tokens.resize(slot.n_ctx);
         size_t token_count = 0;
-        const size_t nread = llama_state_seq_load_file(ctx, state_tmp_file.c_str(), slot.id, tokens.data(), tokens.size(), &token_count);
+        const size_t nread = llama_state_seq_load_file(ctx_tgt, state_tmp_file.c_str(), slot.id, tokens.data(), tokens.size(), &token_count);
         std::error_code remove_ec;
         std::filesystem::remove(state_tmp_file, remove_ec);
         if (nread == 0) {
@@ -869,7 +870,7 @@ private:
         const llama_tokens & tokens = slot->prompt.tokens.get_tokens();
 
         const int64_t t_start = ggml_time_us();
-        const size_t nwrite = llama_state_seq_save_file(ctx, state_tmp_file.c_str(), slot->id, tokens.data(), token_count);
+        const size_t nwrite = llama_state_seq_save_file(ctx_tgt, state_tmp_file.c_str(), slot->id, tokens.data(), token_count);
         if (nwrite == 0) {
             SLT_WRN(*slot, "failed to save persistent slot state to temporary file '%s'\n", state_tmp_file.c_str());
             return;

@@ -2895,18 +2895,24 @@ class LlamaModel(TextModel):
             with open(self.target_model_dir / "config.json", 'r', encoding='utf-8') as f:
                 target_config = json.load(f)
 
-            # EAGLE3 extract_layers
-            target_num_layers = target_config["num_hidden_layers"]
-            extract_layers = [2, target_num_layers // 2, target_num_layers - 3]
-            logger.info(f"EAGLE3: extract_layers = {extract_layers} (target model has {target_num_layers} layers)")
+            # EAGLE3 extract_layers: use explicit list if present, else derive from target layer count
+            if "eagle_aux_hidden_state_layer_ids" in eagle3_raw_config:
+                extract_layers = eagle3_raw_config["eagle_aux_hidden_state_layer_ids"]
+                logger.info(f"EAGLE3: extract_layers = {extract_layers} (from EAGLE3 config)")
+            else:
+                target_cfg = target_config.get("text_config", target_config)
+                target_num_layers = target_cfg["num_hidden_layers"]
+                extract_layers = [2, target_num_layers // 2, target_num_layers - 3]
+                logger.info(f"EAGLE3: extract_layers = {extract_layers} (target model has {target_num_layers} layers)")
             self.gguf_writer.add_array(f"{self.gguf_writer.arch}.extract_layers", extract_layers)
 
             # EAGLE3 target_hidden_size: prefer EAGLE3 config, fallback to target config
+            target_cfg = target_config.get("text_config", target_config)
             if "target_hidden_size" in eagle3_raw_config and eagle3_raw_config["target_hidden_size"] is not None:
                 target_hidden_size = eagle3_raw_config["target_hidden_size"]
                 logger.info(f"EAGLE3: target_hidden_size = {target_hidden_size} (from EAGLE3 config)")
             else:
-                target_hidden_size = target_config["hidden_size"]
+                target_hidden_size = target_cfg["hidden_size"]
                 logger.info(f"EAGLE3: target_hidden_size = {target_hidden_size} (from target model config)")
             self.gguf_writer.add_uint32(f"{self.gguf_writer.arch}.target_hidden_size", target_hidden_size)
 
@@ -3051,20 +3057,22 @@ class LlamaModel(TextModel):
             # Eagle-3 llama checkpoint special weights handling
             # fc.weight: feature fusion layer
             if name == "fc.weight":
-                return [(name, data_torch)]
+                yield (name, data_torch)
+                return
             # d2t: draft to target vocabulary mapping
             elif name == "d2t":
                 # Skip parent class processing (store for manual handling in prepare_tensors)
                 if not hasattr(self, '_eagle3_int_tensors'):
                     self._eagle3_int_tensors = {}
                 self._eagle3_int_tensors[name] = data_torch
-                return []
+                return
             # t2d: target to draft vocabulary mapping (not used, skip completely)
             elif name == "t2d":
-                return []
+                return
             # hidden_norm: EAGLE-3 specific layer normalization
             elif name == "model.layers.0.hidden_norm.weight":
-                return [("blk.0.hidden_norm.weight", data_torch)]
+                yield ("blk.0.hidden_norm.weight", data_torch)
+                return
 
         n_head = self.find_hparam(["n_heads", "num_attention_heads"])
         n_kv_head = self.find_hparam(["n_kv_heads", "num_key_value_heads"])
